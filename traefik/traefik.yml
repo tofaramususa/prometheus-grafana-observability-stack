@@ -1,0 +1,80 @@
+# Global configuration
+global:
+  checkNewVersion: true
+  sendAnonymousUsage: false
+
+# Log configuration
+log:
+  level: INFO
+
+# API and dashboard configuration
+api:
+  dashboard: true
+  insecure: false  # Secure dashboard
+
+# Entry points configuration
+entryPoints:
+  web:
+    address: ":80"
+    # Redirect all HTTP to HTTPS
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+        domains:
+          - main: "monitoring.tofaramususa.com"
+        options: default
+
+  metrics:
+    address: ":8899"
+
+# Certificate resolvers configuration
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: tofara@tofaramususa.me  # Change this to your email
+      storage: /etc/traefik/acme.json
+      httpChallenge:
+        entryPoint: web
+
+# Provider configuration
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: observability_observability-network
+  
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+#metrics
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addServicesLabels: true
+
+# TLS global settings
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12
+      http2: true
+      cipherSuites:
+        - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+        - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
+      curvePreferences:
+        - CurveP521
+        - CurveP384

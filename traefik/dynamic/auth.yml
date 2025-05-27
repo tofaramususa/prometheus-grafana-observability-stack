@@ -1,0 +1,19 @@
+# Dynamic authentication configuration
+http:
+  middlewares:
+    auth:
+      basicAuth:
+        users:
+          # Generated with: htpasswd -nb admin secure_password
+          # Replace this with your own credentials
+          - "admin:$apr1$TiTs0dzk$oJ9MjfSgUseOMkbqRVPXp."  # tofara:{TRAEFIK_ADMIN_PASSWORD}
+
+    secure-headers:
+      headers:
+        frameDeny: true
+        sslRedirect: true
+        browserXssFilter: true
+        contentTypeNosniff: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 31536000

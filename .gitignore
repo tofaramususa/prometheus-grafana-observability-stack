@@ -1,0 +1,11 @@
+.env
+node_modules
+acme.json
+*.pem
+*.crt
+*.key
+*.csr
+*.csr.pem
+*.csr.pem.dec
+secrets/*
+commands.md

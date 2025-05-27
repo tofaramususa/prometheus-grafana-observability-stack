@@ -1,0 +1,242 @@
+services:
+  # define the three services promtheus, grafana and traefik
+  # grafana depends on prometheus
+  # traefik is the reverse proxy and depends on grafana
+  #implement healthchecks for each service
+  #implement a network to make sure they are on the same network  
+  #bind the files for all of them so changes are persistent and when data is stored it stays
+  #grafana accessible on localhost:3000 and prometheus on localhost:9090 and traefik is the only exposed service via https to the outside
+  #traefik routes traffic to the correct service based on the domain/grafana and /prometheus
+  #the prometheus database is stored in a volume available locally, start and stop it persists
+  # the dashboards we create are stored in a volume available locally, start and stop it persists
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.external-url=https://tofaramususa.com/prometheus/'
+    deploy:
+      update_config:
+        failure_action: rollback
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    user: "${UID:-1000}:${GID:-1000}"
+    secrets:
+      - prometheus_master_token
+    networks:
+      - observability-network
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prom_data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/prometheus/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=monitoring_observability-network"
+      # #middlewares
+      # - "traefik.http.middlewares.prometheus-replacepath.replacepathregex.regex=^/prometheus/(.*)"
+      # - "traefik.http.middlewares.prometheus-replacepath.replacepathregex.replacement=/$1"
+      # routers
+      - "traefik.http.routers.prometheus.rule=Host(`monitoring.tofaramususa.com`) && PathPrefix(`/prometheus`)"
+      # - "traefik.http.routers.prometheus.middlewares=prometheus-replacepath"
+      - "traefik.http.routers.prometheus.service=prometheus"
+      - "traefik.http.routers.prometheus.tls=true"
+      - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.routers.prometheus.tls.certresolver=letsencrypt"
+      #services
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+      - "traefik.http.routers.prometheus.middlewares=compression@file,browser-cache@file,buffering@file,http2-optimize@file,auth@file"
+
+  grafana:
+    image: grafana/grafana-enterprise
+    # container_name: grafana
+    # ports:
+    #   - 3000:3000
+    deploy:
+      update_config:
+        order: start-first
+        failure_action: rollback
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_SERVER_ROOT_URL=https://tofaramususa.com/grafana
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+            # Add performance optimizations
+      - GF_SERVER_ENABLE_GZIP=true
+      - GF_SERVER_HTTP_WRITE_TIMEOUT=600s
+      - GF_SERVER_HTTP_READ_TIMEOUT=600s
+      # Static asset caching
+      - GF_SECURITY_COOKIE_SECURE=true
+      - GF_SECURITY_COOKIE_SAMESITE=strict
+
+    networks:
+      - observability-network
+    depends_on:
+      - prometheus
+    volumes:
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/dashboards/json:/etc/grafana/provisioning/dashboards/json
+      - grafana_data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=monitoring_observability-network"
+      #routers
+      - "traefik.http.routers.grafana.rule=Host(`monitoring.tofaramususa.com`) && PathPrefix(`/grafana`)"
+      - "traefik.http.routers.grafana.service=grafana"
+      - "traefik.http.routers.grafana.tls=true"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
+      #services
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+      - "traefik.http.routers.grafana.middlewares=compression@file,browser-cache@file,buffering@file,http2-optimize@file"
+      
+      
+  traefik:
+    image: traefik:3.0
+    deploy:
+      update_config:
+        order: start-first
+    depends_on:
+      - prometheus
+      - grafana
+    ports:
+      - "80:80"
+      - "443:443"
+    # restart: unless-stopped
+    networks:
+      - observability-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik:/etc/traefik
+    labels:
+      # Enable Traefik to manage this container
+      - "traefik.enable=true"
+      # Specify which Docker network Traefik should use for service discovery
+      # This must match the network name defined in the networks section
+      - "traefik.docker.network=monitoring_observability-network"
+      # Define the routing rule for the Traefik dashboard
+      # This says: "Route traffic to this service when the host is monitoring.tofaramususa.com and path starts with /"
+      - "traefik.http.routers.traefik.rule=Host(`monitoring.tofaramususa.com`)"
+      # Specify that this router should serve the Traefik internal API/dashboard
+      - "traefik.http.routers.traefik.service=api@internal"
+      # Define which entrypoint this router should use (websecure = HTTPS/443)
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      # Enable TLS/SSL for this router
+      - "traefik.http.routers.traefik.tls=true"
+      # Specify which certificate resolver to use for TLS (Let's Encrypt in this case)
+      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
+      # Apply the basic authentication middleware to protect the dashboard
+      - "traefik.http.routers.traefik.middlewares=compression@file,browser-cache@file,buffering@file,http2-optimize@file,auth@file"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8899/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+  node_exporter:
+    image: prom/node-exporter:latest
+    deploy:
+      update_config:
+        order: start-first
+    command:
+      - '--path.rootfs=/host'
+    networks:
+      - observability-network
+    # pid: host
+    # restart: unless-stopped
+    volumes:
+      - '/:/host:ro,rslave'
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9100/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command:
+      - '--config=/etc/otel-collector/config.yaml'
+    deploy:
+      update_config:
+        failure_action: rollback
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    user: "${UID:-1000}:${GID:-1000}"
+    networks:
+      - observability-network
+    volumes:
+      - ./otel-collector/config.yaml:/etc/otel-collector/config.yaml
+      - otel_data:/otel-data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:13133/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=monitoring_observability-network"
+      # routers
+      - "traefik.http.routers.otel-collector.rule=Host(`monitoring.tofaramususa.com`) && PathPrefix(`/otel-collector`)"
+      - "traefik.http.routers.otel-collector.service=otel-collector"
+      - "traefik.http.routers.otel-collector.tls=true"
+      - "traefik.http.routers.otel-collector.entrypoints=websecure"
+      - "traefik.http.routers.otel-collector.tls.certresolver=letsencrypt"
+      # services
+      - "traefik.http.services.otel-collector.loadbalancer.server.port=4318" #OTLP HTTP receiver
+      - "traefik.http.routers.otel-collector.middlewares=compression@file,browser-cache@file,buffering@file,http2-optimize@file,auth@file"
+
+volumes:
+  prom_data:
+    driver_opts:
+      type: local
+      o: bind
+      device: /home/tofara/data/prometheus
+
+  grafana_data:
+    driver_opts:
+      type: local
+      o: bind
+      device: /home/tofara/data/grafana
+
+  otel_data:
+    driver_opts:
+      type: local
+      o: bind
+      device: /home/tofara/data/otel-collector
+      
+
+networks:
+  observability-network:
+    driver: overlay
+    attachable: true
+
+secrets:
+  prometheus_master_token:
+    external: true
