@@ -1,6 +1,6 @@
 # Prometheus-Grafana Observability Stack
 
-A production-ready, containerized observability stack featuring Prometheus, Grafana, Traefik, and OpenTelemetry Collector. This stack provides comprehensive monitoring, metrics collection, visualization, and distributed tracing capabilities with enterprise-grade security and performance optimizations.
+A production-ready, containerized observability stack template, derived from a live setup, featuring Prometheus, Grafana, Traefik, and OpenTelemetry Collector. This stack provides comprehensive monitoring, metrics collection, visualization, and distributed tracing capabilities with enterprise-grade security and performance optimizations.
 
 ## 🏗️ Architecture
 
