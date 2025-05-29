@@ -47,8 +47,17 @@ up: init ## Deploy stack
 down: ## Remove stack
 	@echo "$(YELLOW)Removing stack...$(NC)"
 	@$(DS) rm $(STACK_NAME)
+	@echo "$(YELLOW)Waiting for stack removal to complete...$(NC)"
+	@while docker stack ls | grep -q "$(STACK_NAME)"; do \
+		echo "$(YELLOW)Stack still removing...$(NC)"; \
+		sleep 2; \
+	done
+	@echo "$(GREEN)Stack removed successfully$(NC)"
 
-restart: down up ## Restart stack
+restart: down ## Restart stack
+	@echo "$(YELLOW)Waiting for cleanup to complete...$(NC)"
+	@sleep 5
+	@$(MAKE) up
 
 logs: ## View output from services
 	@echo "$(YELLOW)Note: Docker Stack doesn't support direct logs command like Docker Compose$(NC)"
