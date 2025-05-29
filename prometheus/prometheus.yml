@@ -22,9 +22,16 @@ scrape_configs:
       - targets: ['node_exporter:9100']
         labels:
           instance: 'node'
+  
+  - job_name: 'api-service'
+    metrics_path: /metrics
+    scheme: https
+    static_configs:
+      - targets: ['example.com']
+    bearer_token_file: /run/secrets/prometheus_master_token
 
   - job_name: 'otel-collector'
-  static_configs:
-    - targets: ['otel-collector:8889']
-      labels:
-        instance: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8889']
+        labels:
+          instance: 'otel-collector'
